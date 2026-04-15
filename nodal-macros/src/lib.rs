@@ -59,6 +59,27 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
                 let method_name = method.sig.ident.clone();
                 let has_body_param = method.sig.inputs.len() > 1;
 
+                // extract request type if present (from Request<T>)
+                let request_type = if has_body_param
+                    && let syn::FnArg::Typed(arg) = &method.sig.inputs[1]
+                    && let syn::Type::Path(type_path) = &*arg.ty
+                    && let Some(segment) = type_path.path.segments.last()
+                    && segment.ident == "Request"
+                    && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                    && let Some(syn::GenericArgument::Type(ty)) = args.args.first()
+                {
+                    ty.clone()
+                } else {
+                    syn::parse_str("()").unwrap()
+                };
+
+                // extract response type from Result<Response<T>, Error>
+                let response_type = if let ReturnType::Type(_, ref ty) = method.sig.output {
+                    extract_response_type(ty).unwrap_or(syn::parse_str("()").unwrap())
+                } else {
+                    syn::parse_str("()").unwrap()
+                };
+
                 // add `Send` bound to the return type if it's async
                 if method.sig.asyncness.is_some()
                     && let ReturnType::Type(_, ref mut ty) = method.sig.output
@@ -72,7 +93,13 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
                     method.sig.asyncness = None;
                 }
 
-                endpoint_methods.push((method_name, subject, has_body_param));
+                endpoint_methods.push((
+                    method_name,
+                    subject,
+                    has_body_param,
+                    request_type,
+                    response_type,
+                ));
             }
         }
     }
@@ -83,7 +110,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut handler_impls = Vec::new();
     let mut endpoint_registrations = Vec::new();
 
-    for (method_name, subject, has_body_param) in &endpoint_methods {
+    for (method_name, subject, has_body_param, request_type, response_type) in &endpoint_methods {
         // convert snake_case to PascalCase for handler name
         let handler_name = syn::Ident::new(
             &format!("{}Handler", snake_to_pascal(&method_name.to_string())),
@@ -164,6 +191,8 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
             endpoints.push(::nodal::Endpoint {
                 subject: #subject.to_string(),
                 handler: ::std::sync::Arc::new(#handler_name::<Self>(::std::marker::PhantomData)),
+                request_schema: ::schemars::schema_for!(#request_type),
+                response_schema: ::schemars::schema_for!(#response_type),
             });
         });
     }
@@ -215,6 +244,33 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn endpoint(_args: TokenStream, input: TokenStream) -> TokenStream {
     // this is handled by the service macro
     input
+}
+
+// helper function to extract the response type T from Result<Response<T>, Error>
+fn extract_response_type(ty: &syn::Type) -> Option<syn::Type> {
+    if let syn::Type::Path(type_path) = ty {
+        // look for Result<Response<T>, Error>
+        if let Some(segment) = type_path.path.segments.last()
+            && segment.ident == "Result"
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        {
+            // get the first type argument (Response<T>)
+            if let Some(syn::GenericArgument::Type(syn::Type::Path(response_path))) =
+                args.args.first()
+                && let Some(response_segment) = response_path.path.segments.last()
+                && response_segment.ident == "Response"
+                && let syn::PathArguments::AngleBracketed(response_args) =
+                    &response_segment.arguments
+            {
+                // get T from Response<T>
+                if let Some(syn::GenericArgument::Type(inner_ty)) = response_args.args.first() {
+                    return Some(inner_ty.clone());
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn snake_to_pascal(s: &str) -> String {

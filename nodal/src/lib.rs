@@ -13,7 +13,10 @@ use async_nats::PublishError;
 use async_nats::ToServerAddrs;
 use async_nats::service::ServiceExt;
 use futures::StreamExt;
+use schemars::JsonSchema;
+use schemars::Schema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -30,18 +33,18 @@ impl<T: Send + Sync + 'static> ServiceContext for T {}
 
 /// Request wrapper type for endpoint request bodies
 #[derive(Debug, Deserialize)]
-pub struct Request<T> {
+pub struct Request<T: JsonSchema> {
     #[serde(flatten)]
     inner: T,
 }
 
-impl<T> Request<T> {
+impl<T: JsonSchema> Request<T> {
     pub fn into_inner(self) -> T {
         self.inner
     }
 }
 
-impl<T> std::ops::Deref for Request<T> {
+impl<T: JsonSchema> std::ops::Deref for Request<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -104,6 +107,8 @@ impl<Context: ServiceContext> RequestContext<Context> {
 pub struct Endpoint<Context: ServiceContext> {
     pub subject: String,
     pub handler: Arc<dyn EndpointHandler<Context>>,
+    pub request_schema: Schema,
+    pub response_schema: Schema,
 }
 
 /// Service definition.
@@ -205,7 +210,21 @@ async fn run_service<Context: ServiceContext>(
         let service_state = service_state.clone();
         let handler = endpoint.handler.clone();
         let subject = format!("{}.{}", service.name, endpoint.subject);
-        let mut ep = nats_service.endpoint(subject).await?;
+
+        let mut ep = nats_service
+            .endpoint_builder()
+            .metadata(HashMap::from([
+                (
+                    "nodal_request_schema".to_owned(),
+                    serde_json::to_string(&endpoint.request_schema)?,
+                ),
+                (
+                    "nodal_response_schema".to_owned(),
+                    serde_json::to_string(&endpoint.response_schema)?,
+                ),
+            ]))
+            .add(subject)
+            .await?;
 
         join_set.spawn(async move {
             let _guard = span.enter();
