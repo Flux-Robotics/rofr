@@ -1,3 +1,5 @@
+//! Header keys used in various NATS metadata.
+
 /// Service Nodal version header.
 pub const VERSION: &str = "Nodal-Version";
 /// Service unique identifier.
