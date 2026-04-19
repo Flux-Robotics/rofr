@@ -1,5 +1,7 @@
 services:
   nats:
     image: nats:2.12-alpine
+    command:
+      - --jetstream
     ports:
       - 4222:4222

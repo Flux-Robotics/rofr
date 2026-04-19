@@ -1,4 +1,7 @@
-use nodal::{Cluster, Error, RequestContext, endpoint::Request, endpoint::Response, service};
+use async_nats::jetstream::stream::StorageType;
+use nodal::endpoint::RequestContext;
+use nodal::stream::StreamContext;
+use nodal::{Cluster, Error, endpoint::Request, endpoint::Response, service};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -9,10 +12,23 @@ pub struct SetInterval {
     interval_secs: f64,
 }
 
+#[derive(serde::Serialize, schemars::JsonSchema)]
+pub struct Temperature {
+    degrees_celsius: f64,
+}
+
 /// Weather station service with two parameters, `location` and `id`.
 #[service(name = "weather.{location}.{id}", version = "0.1.0")]
 trait WeatherService {
     type Context;
+
+    #[stream(
+        name = "TEMPERATURE",
+        subject = "temperature",
+        storage = StorageType::Memory,
+        message = Temperature,
+    )]
+    async fn temperature(ctx: StreamContext<Self::Context>) -> Result<(), Error>;
 
     /// Example of a response-only endpoint that requires no body to be provided
     /// in the request.
@@ -41,6 +57,21 @@ pub enum WeatherImpl {}
 
 impl WeatherService for WeatherImpl {
     type Context = WeatherContext;
+
+    async fn temperature(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
+        loop {
+            ctx.send(
+                "temperature",
+                &Temperature {
+                    degrees_celsius: 22.5,
+                },
+            )
+            .await? // publish to NATS
+            .await?; // wait for ack from NATS
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
 
     async fn wind_speed(_ctx: RequestContext<WeatherContext>) -> Result<Response<f64>, Error> {
         let speed: f64 = rand::random();

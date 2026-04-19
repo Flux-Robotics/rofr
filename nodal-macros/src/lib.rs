@@ -49,12 +49,47 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
         .push(syn::parse_quote!(Self::Context: ::nodal::ServiceContext));
 
     let mut endpoint_methods = Vec::new();
+    let mut stream_methods = Vec::new();
+
     for item in &mut trait_item.items {
         if let TraitItem::Fn(method) = item {
+            // check if this method has a #[stream] attribute
+            let mut stream_name = None;
+            let mut stream_subject = None;
+            let mut stream_storage = None;
+            let mut stream_message = None;
+
             // check if this method has an #[endpoint] attribute
             let mut endpoint_subject = None;
             method.attrs.retain(|attr| {
-                if attr.path().is_ident("endpoint") {
+                if attr.path().is_ident("stream") {
+                    let _ = attr.parse_nested_meta(|meta| {
+                        if meta.path.is_ident("name") {
+                            let value = meta.value()?;
+                            let s: syn::LitStr = value.parse()?;
+                            stream_name = Some(s.value());
+                            Ok(())
+                        } else if meta.path.is_ident("subject") {
+                            let value = meta.value()?;
+                            let s: syn::LitStr = value.parse()?;
+                            stream_subject = Some(s.value());
+                            Ok(())
+                        } else if meta.path.is_ident("storage") {
+                            let value = meta.value()?;
+                            let path: syn::Path = value.parse()?;
+                            stream_storage = Some(path);
+                            Ok(())
+                        } else if meta.path.is_ident("message") {
+                            let value = meta.value()?;
+                            let ty: syn::Type = value.parse()?;
+                            stream_message = Some(ty);
+                            Ok(())
+                        } else {
+                            Err(meta.error("unsupported stream attribute"))
+                        }
+                    });
+                    false // remove the attribute
+                } else if attr.path().is_ident("endpoint") {
                     let _ = attr.parse_nested_meta(|meta| {
                         if meta.path.is_ident("subject") {
                             let value = meta.value()?;
@@ -70,6 +105,25 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
                     true // keep other attributes
                 }
             });
+
+            if let (Some(name), Some(subject)) = (stream_name, stream_subject) {
+                let method_name = method.sig.ident.clone();
+
+                // add `Send` bound to the return type if it's async
+                if method.sig.asyncness.is_some()
+                    && let ReturnType::Type(_, ref mut ty) = method.sig.output
+                {
+                    // wrap the return type with + Send
+                    let original_ty = (**ty).clone();
+                    **ty = syn::parse_quote!(
+                        impl ::std::future::Future<Output = #original_ty> + Send
+                    );
+                    // remove async keyword since we're using impl Future now
+                    method.sig.asyncness = None;
+                }
+
+                stream_methods.push((method_name, name, subject, stream_storage, stream_message));
+            }
 
             if let Some(subject) = endpoint_subject {
                 let method_name = method.sig.ident.clone();
@@ -125,6 +179,11 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut handler_debug_impls = Vec::new();
     let mut handler_impls = Vec::new();
     let mut endpoint_registrations = Vec::new();
+
+    // generate stream handler structs and registrations
+    let mut stream_handler_structs = Vec::new();
+    let mut stream_handler_debug_impls = Vec::new();
+    let mut stream_handler_impls = Vec::new();
 
     for (method_name, subject, has_body_param, request_type, response_type) in &endpoint_methods {
         // convert snake_case to PascalCase for handler name
@@ -227,6 +286,82 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
+    // generate stream handlers and registrations
+    for (method_name, _stream_name, _stream_subject, _storage_type, _message_type) in
+        &stream_methods
+    {
+        let handler_name = syn::Ident::new(
+            &format!("{}StreamHandler", snake_to_pascal(&method_name.to_string())),
+            method_name.span(),
+        );
+
+        stream_handler_structs.push(quote! {
+            struct #handler_name<T>(::std::marker::PhantomData<T>);
+        });
+
+        stream_handler_debug_impls.push(quote! {
+            impl<T> ::std::fmt::Debug for #handler_name<T> {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    f.debug_struct(stringify!(#handler_name)).finish()
+                }
+            }
+        });
+
+        stream_handler_impls.push(quote! {
+            #[::nodal::async_trait::async_trait]
+            impl<T> ::nodal::stream::StreamHandler<T::Context> for #handler_name<T>
+            where
+                T: #trait_name + Send + Sync + 'static,
+                T::Context: ::nodal::ServiceContext,
+            {
+                async fn handle_stream(
+                    &self,
+                    ctx: ::nodal::stream::StreamContext<T::Context>,
+                ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                    T::#method_name(ctx).await?;
+                    Ok(())
+                }
+            }
+        });
+    }
+
+    // generate stream registrations
+    let mut stream_registrations = Vec::new();
+    for (method_name, stream_name, stream_subject, storage_type, message_type) in &stream_methods {
+        let handler_name = syn::Ident::new(
+            &format!("{}StreamHandler", snake_to_pascal(&method_name.to_string())),
+            method_name.span(),
+        );
+
+        let storage_expr = if let Some(storage) = storage_type {
+            quote! { #storage }
+        } else {
+            quote! { ::async_nats::jetstream::stream::StorageType::File }
+        };
+
+        let message_schema = if let Some(msg_type) = message_type {
+            quote! { ::schemars::schema_for!(#msg_type) }
+        } else {
+            quote! { ::schemars::schema_for!(()) }
+        };
+
+        let subject_prefix_expr = build_subject_prefix_expr(&service_template_params);
+
+        stream_registrations.push(quote! {
+            streams.push(::nodal::Stream {
+                subject_prefix: format!("{}.{}", #service_name, #subject_prefix_expr),
+                config: ::async_nats::jetstream::stream::Config {
+                    name: format!("{}_{}", #service_name.to_string().to_uppercase(), #stream_name.to_string()),
+                    subjects: vec![format!("{}.{}.{}", #service_name, #subject_prefix_expr, #stream_subject)],
+                    storage: #storage_expr,
+                    ..Default::default()
+                },
+                handler: ::std::sync::Arc::new(#handler_name::<Self>(::std::marker::PhantomData)),
+                message_schema: #message_schema,
+            });
+        });
+    }
+
     let expanded = quote! {
         #trait_item
 
@@ -238,6 +373,15 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
 
         // generate handler implementations
         #(#handler_impls)*
+
+        // generate stream handler structs
+        #(#stream_handler_structs)*
+
+        // generate Debug implementations for stream handlers
+        #(#stream_handler_debug_impls)*
+
+        // generate stream handler implementations
+        #(#stream_handler_impls)*
 
         // extension trait for the service() method with default implementation
         pub trait #ext_trait_name: #trait_name + Sized
@@ -256,13 +400,17 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
         {
             #service_fn_signature {
                 let mut endpoints = Vec::new();
+                let mut streams = Vec::new();
 
                 #(#endpoint_registrations)*
+
+                #(#stream_registrations)*
 
                 ::nodal::Service {
                     name: #service_name.to_string(),
                     version: #service_version.to_string(),
                     endpoints,
+                    streams,
                     context,
                 }
             }
@@ -274,6 +422,12 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn endpoint(_args: TokenStream, input: TokenStream) -> TokenStream {
+    // this is handled by the service macro
+    input
+}
+
+#[proc_macro_attribute]
+pub fn stream(_args: TokenStream, input: TokenStream) -> TokenStream {
     // this is handled by the service macro
     input
 }
@@ -357,6 +511,27 @@ fn build_subject_expr(subject: &str, service_params: &[String]) -> proc_macro2::
         format_str.push_str("{}.");
     }
     format_str.push_str(subject);
+
+    // Generate parameter identifiers in the order they appear in this subject
+    let param_idents: Vec<proc_macro2::TokenStream> = service_params
+        .iter()
+        .map(|p| {
+            let ident = syn::Ident::new(p, proc_macro2::Span::call_site());
+            quote! { #ident }
+        })
+        .collect();
+
+    quote! {
+        format!(#format_str, #(#param_idents),*)
+    }
+}
+
+fn build_subject_prefix_expr(service_params: &[String]) -> proc_macro2::TokenStream {
+    let format_str = service_params
+        .iter()
+        .map(|_| "{}")
+        .collect::<Vec<_>>()
+        .join(".");
 
     // Generate parameter identifiers in the order they appear in this subject
     let param_idents: Vec<proc_macro2::TokenStream> = service_params

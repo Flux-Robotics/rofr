@@ -7,7 +7,7 @@ pub mod stream;
 pub use async_trait;
 pub use bytes::Bytes;
 pub use endpoint::{BoxError, EndpointHandler};
-pub use nodal_macros::{endpoint, service};
+pub use nodal_macros::{endpoint, service, stream};
 
 use async_nats::ConnectOptions;
 use async_nats::HeaderMap;
@@ -20,6 +20,7 @@ use schemars::Schema;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use stream::*;
 use tokio::task::JoinSet;
 use tracing::Level;
 use tracing::debug;
@@ -54,6 +55,14 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+impl From<async_nats::jetstream::context::PublishError> for Error {
+    fn from(value: async_nats::jetstream::context::PublishError) -> Self {
+        Self {
+            message: value.to_string(),
+        }
+    }
+}
+
 pub struct ServiceState<Context: ServiceContext> {
     /// Service-specific state
     private: Context,
@@ -69,11 +78,19 @@ pub struct Endpoint<Context: ServiceContext> {
     pub response_schema: Schema,
 }
 
+pub struct Stream<Context: ServiceContext> {
+    pub subject_prefix: String,
+    pub config: async_nats::jetstream::stream::Config,
+    pub handler: Arc<dyn StreamHandler<Context>>,
+    pub message_schema: Schema,
+}
+
 /// Service definition.
 pub struct Service<Context: ServiceContext> {
     pub name: String,
     pub version: String,
     pub endpoints: Vec<Endpoint<Context>>,
+    pub streams: Vec<Stream<Context>>,
     pub context: Context,
 }
 
@@ -234,6 +251,27 @@ async fn run_service<Context: ServiceContext>(
 
                 req.respond_with_headers(response, headers).await?;
             }
+            Ok(())
+        });
+    }
+
+    for stream in service.streams {
+        let nats = nats.clone();
+        let jetstream = async_nats::jetstream::new(nats);
+        let service = service_state.clone();
+        let handler = stream.handler.clone();
+
+        let _ = jetstream.create_or_update_stream(stream.config).await?;
+
+        join_set.spawn(async move {
+            handler
+                .handle_stream(StreamContext {
+                    service,
+                    subject_prefix: stream.subject_prefix,
+                    jetstream,
+                })
+                .await
+                .unwrap();
             Ok(())
         });
     }
