@@ -1,12 +1,12 @@
 #![doc = include_str!("../../README.md")]
 
 pub mod endpoint;
-mod handler;
 pub mod header;
+pub mod stream;
 
 pub use async_trait;
 pub use bytes::Bytes;
-pub use handler::{BoxError, EndpointHandler};
+pub use endpoint::{BoxError, EndpointHandler};
 pub use nodal_macros::{endpoint, service};
 
 use async_nats::ConnectOptions;

@@ -1,6 +1,9 @@
 use crate::{ServiceContext, ServiceState};
+use async_trait::async_trait;
+use bytes::Bytes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 /// Request wrapper type for endpoint request bodies
@@ -44,4 +47,18 @@ impl<Context: ServiceContext> RequestContext<Context> {
     pub fn nats(&self) -> &async_nats::Client {
         &self.nats
     }
+}
+
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+#[async_trait]
+pub trait EndpointHandler<Context>: Debug + Send + Sync
+where
+    Context: ServiceContext,
+{
+    async fn handle_request(
+        &self,
+        rqctx: RequestContext<Context>,
+        body: Bytes,
+    ) -> Result<Bytes, BoxError>;
 }
