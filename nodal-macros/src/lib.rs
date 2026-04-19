@@ -161,7 +161,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
                         rqctx: ::nodal::RequestContext<T::Context>,
                         body: ::nodal::Bytes,
                     ) -> Result<::nodal::Bytes, ::nodal::BoxError> {
-                        let request: ::nodal::Request<_> = ::serde_json::from_slice(&body)?;
+                        let request: ::nodal::endpoint::Request<_> = ::serde_json::from_slice(&body)?;
                         let result = T::#method_name(rqctx, request).await;
 
                         match result {
