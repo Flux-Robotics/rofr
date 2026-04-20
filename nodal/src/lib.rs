@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use tokio::task::JoinSet;
+use tracing::Instrument;
 use tracing::Level;
 use tracing::debug;
 use tracing::error;
@@ -196,7 +197,7 @@ impl<Context: ServiceContext, A: ToServerAddrs> Cluster<Context, A> {
             )
         };
 
-        let mut join_set = tokio::task::JoinSet::new();
+        let mut join_set = tokio::task::JoinSet::<Result<_, async_nats::Error>>::new();
 
         for service in self.services {
             let nats = new_client().await?;
@@ -217,8 +218,10 @@ impl<Context: ServiceContext, A: ToServerAddrs> Cluster<Context, A> {
             );
 
             join_set.spawn(async move {
-                let _guard = span.enter();
-                run_service(nats, service, nats_service).await
+                run_service(nats, service, nats_service)
+                    .instrument(span)
+                    .await?;
+                Ok(())
             });
         }
 
@@ -265,55 +268,58 @@ async fn run_service<Context: ServiceContext>(
             .add(subject)
             .await?;
 
-        join_set.spawn(async move {
-            let _guard = span.enter();
-            while let Some(req) = ep.next().await {
-                let request_id = req
-                    .message
-                    .headers
-                    .as_ref()
-                    .and_then(|h| h.get(header::REQUEST_ID).map(|v| v.as_str()));
+        join_set.spawn(
+            async move {
+                debug!("handler started");
+                while let Some(req) = ep.next().await {
+                    let request_id = req
+                        .message
+                        .headers
+                        .as_ref()
+                        .and_then(|h| h.get(header::REQUEST_ID).map(|v| v.as_str()));
 
-                let span = span!(Level::INFO, "handler", request_id = request_id.to_owned());
-                let _guard = span.enter();
-                let result = handler
-                    .handle_request(
-                        endpoint::RequestContext {
-                            service: service_state.clone(),
-                            nats: nats.clone(),
-                            request_id: request_id.unwrap_or("").to_owned(),
-                        },
-                        req.message.payload.clone(),
-                    )
-                    .await;
+                    let span = span!(Level::INFO, "handler", request_id = request_id.to_owned());
+                    let result = handler
+                        .handle_request(
+                            endpoint::RequestContext {
+                                service: service_state.clone(),
+                                nats: nats.clone(),
+                                request_id: request_id.unwrap_or("").to_owned(),
+                            },
+                            req.message.payload.clone(),
+                        )
+                        .instrument(span)
+                        .await;
 
-                // response headers
-                let mut headers = HeaderMap::new();
-                headers.insert(header::SERVICE_UID, service_state.uid.as_str());
-                if let Some(id) = request_id {
-                    headers.insert(header::REQUEST_ID, id);
+                    // response headers
+                    let mut headers = HeaderMap::new();
+                    headers.insert(header::SERVICE_UID, service_state.uid.as_str());
+                    if let Some(id) = request_id {
+                        headers.insert(header::REQUEST_ID, id);
+                    }
+
+                    let response = match result {
+                        Ok(res) => {
+                            debug!(response_size_bytes = res.len(), "request completed");
+                            Ok(res)
+                        }
+                        Err(err) => {
+                            let message = format!("{}", err);
+                            error!(message, "request failed");
+                            Err(async_nats::service::error::Error {
+                                status: message,
+                                code: 0, // todo: not sure what to do with this
+                            })
+                        }
+                    };
+
+                    req.respond_with_headers(response, headers).await?;
                 }
-
-                let response = match result {
-                    Ok(res) => {
-                        debug!(response_size_bytes = res.len(), "request completed");
-                        Ok(res)
-                    }
-                    Err(err) => {
-                        let message = format!("{}", err);
-                        error!(message, "request failed");
-                        Err(async_nats::service::error::Error {
-                            status: message,
-                            code: 0, // todo: not sure what to do with this
-                        })
-                    }
-                };
-
-                req.respond_with_headers(response, headers).await?;
+                info!("handler ended");
+                Ok(())
             }
-            info!("handler ended");
-            Ok(())
-        });
+            .instrument(span),
+        );
     }
 
     for stream in service.streams {
@@ -329,21 +335,22 @@ async fn run_service<Context: ServiceContext>(
 
         let _ = jetstream.create_or_update_stream(stream.config).await?;
 
-        join_set.spawn(async move {
-            let _guard = span.enter();
-            handler
-                .handle_stream(StreamContext {
-                    service,
-                    subject_prefix: stream.subject_prefix,
-                    jetstream,
-                })
-                .await?;
-            info!("handler ended");
-            Ok(())
-        });
+        join_set.spawn(
+            async move {
+                debug!("handler started");
+                handler
+                    .handle_stream(StreamContext {
+                        service,
+                        subject_prefix: stream.subject_prefix,
+                        jetstream,
+                    })
+                    .await?;
+                info!("handler ended");
+                Ok(())
+            }
+            .instrument(span),
+        );
     }
-
-    info!("service started");
 
     while let Some(res) = join_set.join_next().await {
         res.map_err(|e| format!("service task stopped: {e}"))??;
