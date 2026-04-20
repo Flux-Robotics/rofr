@@ -226,9 +226,7 @@ impl<Context: ServiceContext, A: ToServerAddrs> Cluster<Context, A> {
         }
 
         while let Some(res) = join_set.join_next().await {
-            if let Err(e) = res {
-                eprintln!("Service task panicked: {e}");
-            }
+            res.map_err(|e| format!("service task panicked: {e}"))?;
         }
 
         Ok(())
@@ -343,9 +341,7 @@ async fn run_service<Context: ServiceContext>(
     info!("service started");
 
     while let Some(res) = join_set.join_next().await {
-        if let Err(e) = res {
-            eprintln!("Service task panicked: {e}");
-        }
+        res.map_err(|e| format!("Service task panicked: {e}"))??;
     }
 
     info!("stopping service");
