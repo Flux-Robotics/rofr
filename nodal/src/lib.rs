@@ -311,11 +311,17 @@ async fn run_service<Context: ServiceContext>(
 
                 req.respond_with_headers(response, headers).await?;
             }
+            info!("handler ended");
             Ok(())
         });
     }
 
     for stream in service.streams {
+        let span = span!(
+            Level::INFO,
+            "stream",
+            "subject_prefix" = stream.subject_prefix
+        );
         let nats = nats.clone();
         let jetstream = async_nats::jetstream::new(nats);
         let service = service_state.clone();
@@ -324,6 +330,7 @@ async fn run_service<Context: ServiceContext>(
         let _ = jetstream.create_or_update_stream(stream.config).await?;
 
         join_set.spawn(async move {
+            let _guard = span.enter();
             handler
                 .handle_stream(StreamContext {
                     service,
@@ -332,6 +339,7 @@ async fn run_service<Context: ServiceContext>(
                 })
                 .await
                 .unwrap();
+            info!("handler ended");
             Ok(())
         });
     }
