@@ -38,6 +38,6 @@ flowchart LR
 # Requests for Discussion
 
 The design development is captured with an RFD process outlined in [RFD 1
-Requests for Discussion](rfd/RFD 1 Requests for Discussion.md). Please note that
+Requests for Discussion](<rfd/RFD 1 Requests for Discussion.md>). Please note that
 some features may not be implemented yet even if they are present in RFD
 documents.
