@@ -55,11 +55,11 @@ extern crate nodal_macros;
 /// # Example
 ///
 /// ```rust
-/// use nodal::service;
 /// use nodal::Error;
 /// use nodal::Request;
 /// use nodal::RequestContext;
 /// use nodal::Response;
+/// use nodal::service;
 ///
 /// #[service(name = "actuator", version = "0.1.2")]
 /// trait ActuatorService {

@@ -1,1 +1,3 @@
 imports_granularity = "Item"
+format_code_in_doc_comments = true
+reorder_imports = true

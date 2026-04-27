@@ -1,7 +1,13 @@
 use async_nats::service;
-use nodal::{Cluster, Error, Request, RequestContext, Response, service};
+use nodal::Cluster;
+use nodal::Error;
+use nodal::Request;
+use nodal::RequestContext;
+use nodal::Response;
+use nodal::service;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::time::Duration;
 use tokio::time::sleep;
 
