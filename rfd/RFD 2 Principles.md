@@ -3,7 +3,7 @@ date: 2026-04-27
 authors: |
   @liamkinne
 labels: meta
-state: draft
+state: published
 ---
 
 # Principles
