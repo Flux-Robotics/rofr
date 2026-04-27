@@ -361,6 +361,73 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
         });
     }
 
+    let client_name = syn::Ident::new(&format!("{}Client", trait_name), trait_name.span());
+
+    let client_param_fields: Vec<proc_macro2::TokenStream> =
+        param_idents.iter().map(|p| quote! { #p: String }).collect();
+
+    let client_new_params = if param_idents.is_empty() {
+        quote! { nats: ::async_nats::Client }
+    } else {
+        quote! { nats: ::async_nats::Client, #(#param_idents: impl ::std::fmt::Display),* }
+    };
+
+    let client_field_inits: Vec<proc_macro2::TokenStream> = param_idents
+        .iter()
+        .map(|p| quote! { #p: #p.to_string() })
+        .collect();
+
+    let client_methods: Vec<proc_macro2::TokenStream> = endpoint_methods
+        .iter()
+        .map(|(method_name, subject, has_body_param, request_type, response_type)| {
+            let subject_expr =
+                build_client_subject_expr(service_name, subject, &service_template_params);
+            let header_block = quote! {
+                let request_id = ::nodal::new_request_id();
+                let mut headers = ::async_nats::HeaderMap::new();
+                headers.insert(::nodal::header::REQUEST_ID, request_id.as_str());
+                let subject = #subject_expr;
+            };
+            let status_check = quote! {
+                if let Some(status) = msg.status {
+                    if status.as_u16() != 200 {
+                        let err = msg.description
+                            .unwrap_or_else(|| String::from_utf8_lossy(&msg.payload).to_string());
+                        return Err(::nodal::ClientError::ServiceError(err));
+                    }
+                }
+                let result: #response_type = ::serde_json::from_slice(&msg.payload)
+                    .map_err(::nodal::ClientError::Deserialize)?;
+                Ok(result)
+            };
+            if *has_body_param {
+                quote! {
+                    pub async fn #method_name(&self, body: #request_type) -> Result<#response_type, ::nodal::ClientError> {
+                        #header_block
+                        let payload = ::serde_json::to_vec(&body)
+                            .map_err(::nodal::ClientError::Serialize)?;
+                        let msg = self.nats
+                            .request_with_headers(subject, headers, ::nodal::Bytes::from(payload))
+                            .await
+                            .map_err(|e| ::nodal::ClientError::Request(Box::new(e)))?;
+                        #status_check
+                    }
+                }
+            } else {
+                quote! {
+                    pub async fn #method_name(&self) -> Result<#response_type, ::nodal::ClientError> {
+                        #header_block
+                        let msg = self.nats
+                            .request_with_headers(subject, headers, ::nodal::Bytes::new())
+                            .await
+                            .map_err(|e| ::nodal::ClientError::Request(Box::new(e)))?;
+                        #status_check
+                    }
+                }
+            }
+        })
+        .collect();
+
     let expanded = quote! {
         #trait_item
 
@@ -413,6 +480,23 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
                     context,
                 }
             }
+        }
+
+        /// Generated service client.
+        pub struct #client_name {
+            nats: ::async_nats::Client,
+            #(#client_param_fields,)*
+        }
+
+        impl #client_name {
+            pub fn new(#client_new_params) -> Self {
+                Self {
+                    nats,
+                    #(#client_field_inits,)*
+                }
+            }
+
+            #(#client_methods)*
         }
     };
 
@@ -546,6 +630,37 @@ fn build_subject_prefix_expr(service_params: &[String]) -> proc_macro2::TokenStr
     quote! {
         format!(#format_str, #(#param_idents),*)
     }
+}
+
+/// Build an expression that constructs the full client subject (including the service
+/// base name) by replacing template parameters with `self.param` references.
+/// e.g., service_name = "weather", subject = "wind_speed", params = ["location", "id"]
+/// -> format!("weather.{}.{}.wind_speed", &self.location, &self.id)
+fn build_client_subject_expr(
+    service_name: &str,
+    subject: &str,
+    service_params: &[String],
+) -> proc_macro2::TokenStream {
+    if service_params.is_empty() {
+        let full = format!("{}.{}", service_name, subject);
+        return quote! { #full.to_string() };
+    }
+
+    let mut fmt = format!("{}.", service_name);
+    for _ in service_params {
+        fmt.push_str("{}.");
+    }
+    fmt.push_str(subject);
+
+    let param_exprs: Vec<proc_macro2::TokenStream> = service_params
+        .iter()
+        .map(|p| {
+            let ident = syn::Ident::new(p, proc_macro2::Span::call_site());
+            quote! { &self.#ident }
+        })
+        .collect();
+
+    quote! { format!(#fmt, #(#param_exprs),*) }
 }
 
 #[cfg(test)]
