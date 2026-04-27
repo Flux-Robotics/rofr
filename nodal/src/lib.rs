@@ -5,12 +5,14 @@
 //! # API stability
 //! While this crate is pre v1, the API can and will change without warning.
 
+mod client;
 mod endpoint;
 pub mod header;
 mod stream;
 
 pub use async_trait;
 pub use bytes::Bytes;
+pub use client::ClientError;
 pub use endpoint::EndpointHandler;
 pub use endpoint::Request;
 pub use endpoint::RequestContext;
@@ -124,34 +126,6 @@ impl From<async_nats::jetstream::context::PublishError> for Error {
         }
     }
 }
-
-/// Generates a new unique request ID.
-#[doc(hidden)]
-pub fn new_request_id() -> String {
-    ulid::Ulid::new().to_string()
-}
-
-/// Error type returned by generated service clients.
-#[derive(Debug)]
-pub enum ClientError {
-    Serialize(serde_json::Error),
-    Request(Box<dyn std::error::Error + Send + Sync>),
-    Deserialize(serde_json::Error),
-    ServiceError(String),
-}
-
-impl fmt::Display for ClientError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ClientError::Serialize(e) => write!(f, "serialization error: {e}"),
-            ClientError::Request(e) => write!(f, "request error: {e}"),
-            ClientError::Deserialize(e) => write!(f, "deserialization error: {e}"),
-            ClientError::ServiceError(msg) => write!(f, "service error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ClientError {}
 
 /// Shared service state.
 pub struct ServiceState<Context: ServiceContext> {
