@@ -51,6 +51,8 @@ async fn test_service() {
     assert_eq!(info.version, "0.1.2");
     assert_eq!(info.name, "test_service");
     assert_eq!(info.endpoints.len(), 1);
+    assert_eq!(info.endpoints[0].name, "test_service-response_only");
+    assert_eq!(info.endpoints[0].subject, "test_service.response_only");
 
     cluster_task.abort();
 }
