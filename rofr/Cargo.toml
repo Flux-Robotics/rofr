@@ -21,7 +21,7 @@ ulid = "1.2"
 metrics = { version = "0.24", optional = true }
 
 [dev-dependencies]
-nats-server = { git = "https://github.com/nats-io/nats.rs", version = "0.1.0" }
+nats-server = { git = "https://github.com/nats-io/nats.rs" }
 tokio = { version = "1.51", features = ["full"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rand = "0.10"
