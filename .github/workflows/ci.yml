@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Nightly
+        run: rustup update nightly && rustup default nightly
       - name: Check formatting
         run: cargo +nightly fmt --all -- --check
 
@@ -24,8 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Nightly
-        run: rustup update nightly && rustup default nightly
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
       - name: Run Clippy
