@@ -5,18 +5,17 @@ use rofr::Request;
 use rofr::RequestContext;
 use rofr::Response;
 use rofr::service;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::time::Duration;
 use tokio::time::sleep;
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExampleRequest {
     input: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExampleResponse {
     output: String,
 }

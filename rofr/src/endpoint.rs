@@ -2,7 +2,6 @@ use crate::ServiceContext;
 use crate::ServiceState;
 use async_trait::async_trait;
 use bytes::Bytes;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -10,12 +9,12 @@ use std::sync::Arc;
 
 /// Request wrapper type for endpoint request bodies
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Request<T: JsonSchema> {
+pub struct Request<T> {
     #[serde(flatten)]
     pub inner: T,
 }
 
-impl<T: JsonSchema + serde::de::DeserializeOwned + Serialize> Request<T> {
+impl<T: serde::de::DeserializeOwned + Serialize> Request<T> {
     /// Serialize the request into raw bytes.
     ///
     /// This is the counterpart to [`Response::from_bytes`] and can be used to
@@ -33,13 +32,13 @@ impl<T: JsonSchema + serde::de::DeserializeOwned + Serialize> Request<T> {
     }
 }
 
-impl<T: JsonSchema> Request<T> {
+impl<T> Request<T> {
     pub fn into_inner(self) -> T {
         self.inner
     }
 }
 
-impl<T: JsonSchema> std::ops::Deref for Request<T> {
+impl<T> std::ops::Deref for Request<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -49,9 +48,9 @@ impl<T: JsonSchema> std::ops::Deref for Request<T> {
 
 /// Successful response wrapper
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Response<T: JsonSchema>(pub T);
+pub struct Response<T>(pub T);
 
-impl<T: JsonSchema + serde::de::DeserializeOwned + Serialize> Response<T> {
+impl<T: serde::de::DeserializeOwned + Serialize> Response<T> {
     /// Serialize the response into raw bytes.
     ///
     /// This is the counterpart to [`Request::from_bytes`] and can be used to

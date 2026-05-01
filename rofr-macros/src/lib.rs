@@ -187,7 +187,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut stream_handler_debug_impls = Vec::new();
     let mut stream_handler_impls = Vec::new();
 
-    for (method_name, subject, has_body_param, request_type, response_type) in &endpoint_methods {
+    for (method_name, subject, has_body_param, _request_type, _response_type) in &endpoint_methods {
         // convert snake_case to PascalCase for handler name
         let handler_name = syn::Ident::new(
             &format!("{}Handler", snake_to_pascal(&method_name.to_string())),
@@ -255,8 +255,6 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
             endpoints.push(::rofr::Endpoint {
                 subject: #subject_expr,
                 handler: ::std::sync::Arc::new(#handler_name::<Self>(::std::marker::PhantomData)),
-                request_schema: ::schemars::schema_for!(#request_type),
-                response_schema: ::schemars::schema_for!(#response_type),
             });
         });
     }
@@ -326,7 +324,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // generate stream registrations
     let mut stream_registrations = Vec::new();
-    for (method_name, stream_name, stream_subject, storage_type, message_type) in &stream_methods {
+    for (method_name, stream_name, stream_subject, storage_type, _message_type) in &stream_methods {
         let handler_name = syn::Ident::new(
             &format!("{}StreamHandler", snake_to_pascal(&method_name.to_string())),
             method_name.span(),
@@ -336,12 +334,6 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
             quote! { #storage }
         } else {
             quote! { ::async_nats::jetstream::stream::StorageType::File }
-        };
-
-        let message_schema = if let Some(msg_type) = message_type {
-            quote! { ::schemars::schema_for!(#msg_type) }
-        } else {
-            quote! { ::schemars::schema_for!(()) }
         };
 
         let subject_prefix_expr = build_subject_prefix_expr(&service_template_params);
@@ -356,7 +348,6 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
                     ..Default::default()
                 },
                 handler: ::std::sync::Arc::new(#handler_name::<Self>(::std::marker::PhantomData)),
-                message_schema: #message_schema,
             });
         });
     }

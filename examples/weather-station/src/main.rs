@@ -12,13 +12,13 @@ use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 /// Interval configuration request body.
-#[derive(serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SetInterval {
     interval_secs: f64,
 }
 
 /// Temperature reading.
-#[derive(serde::Serialize, schemars::JsonSchema)]
+#[derive(serde::Serialize)]
 pub struct Temperature {
     degrees_celsius: f64,
 }

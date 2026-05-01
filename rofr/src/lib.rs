@@ -27,7 +27,6 @@ use async_nats::ToServerAddrs;
 use async_nats::service::ServiceExt;
 use futures::StreamExt;
 use header::*;
-use schemars::Schema;
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
@@ -151,8 +150,6 @@ pub struct ServiceState<Context: ServiceContext> {
 pub struct Endpoint<Context: ServiceContext> {
     pub subject: String,
     pub handler: Arc<dyn EndpointHandler<Context>>,
-    pub request_schema: Schema,
-    pub response_schema: Schema,
 }
 
 /// Stream definition.
@@ -160,7 +157,6 @@ pub struct Stream<Context: ServiceContext> {
     pub subject_prefix: String,
     pub config: async_nats::jetstream::stream::Config,
     pub handler: Arc<dyn StreamHandler<Context>>,
-    pub message_schema: Schema,
 }
 
 /// Service definition.
@@ -293,20 +289,7 @@ async fn run_service<Context: ServiceContext>(
         let handler = endpoint.handler.clone();
         let subject = format!("{}.{}", service.name, endpoint.subject);
 
-        let mut ep = nats_service
-            .endpoint_builder()
-            .metadata(HashMap::from([
-                (
-                    REQUEST_SCHEMA.to_owned(),
-                    serde_json::to_string(&endpoint.request_schema)?,
-                ),
-                (
-                    RESPONSE_SCHEMA.to_owned(),
-                    serde_json::to_string(&endpoint.response_schema)?,
-                ),
-            ]))
-            .add(subject)
-            .await?;
+        let mut ep = nats_service.endpoint_builder().add(subject).await?;
 
         #[cfg(feature = "metrics")]
         let metric_labels = [
