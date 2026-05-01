@@ -5,6 +5,8 @@ description = "Framework for building robotics APIs that use NATS messaging"
 version = "0.1.1"
 edition = "2024"
 license = "MPL-2.0"
+repository = "https://github.com/Flux-Robotics/rofr"
+readme = "README.md"
 
 [dependencies]
 rofr-macros = { version = "^0.1.1", path = "../rofr-macros" }
