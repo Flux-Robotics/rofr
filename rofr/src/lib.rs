@@ -13,6 +13,7 @@ mod stream;
 pub use async_trait;
 pub use bytes::Bytes;
 pub use client::ClientError;
+pub use client::generate_request_id;
 pub use endpoint::EndpointHandler;
 pub use endpoint::Request;
 pub use endpoint::RequestContext;

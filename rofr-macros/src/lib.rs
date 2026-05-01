@@ -390,7 +390,7 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
             let subject_expr =
                 build_client_subject_expr(service_name, subject, &service_template_params);
             let header_block = quote! {
-                let request_id = ::ulid::Ulid::new().to_string();
+                let request_id = ::rofr::generate_request_id();
                 let mut headers = ::async_nats::HeaderMap::new();
                 headers.insert(::rofr::header::REQUEST_ID, request_id.as_str());
                 let subject = #subject_expr;

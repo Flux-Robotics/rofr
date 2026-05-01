@@ -21,3 +21,8 @@ impl fmt::Display for ClientError {
 }
 
 impl std::error::Error for ClientError {}
+
+/// Generates a new unique request id.
+pub fn generate_request_id() -> String {
+    ulid::Ulid::new().to_string()
+}
