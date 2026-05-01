@@ -26,3 +26,20 @@ impl std::error::Error for ClientError {}
 pub fn generate_request_id() -> String {
     ulid::Ulid::new().to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_request_id_length() {
+        assert_eq!(generate_request_id().len(), 26);
+    }
+
+    #[test]
+    fn test_generate_request_id_unique() {
+        let a = generate_request_id();
+        let b = generate_request_id();
+        assert_ne!(a, b);
+    }
+}
