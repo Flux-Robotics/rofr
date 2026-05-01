@@ -226,6 +226,10 @@ impl<A: ToServerAddrs> Cluster<A> {
         self.services.push(Box::new(d));
     }
 
+    /// Start the service cluster.
+    ///
+    /// If no services are added to the cluster, it will idling indefinitely
+    /// rather than exit.
     pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         let new_client = async || {
             Ok::<_, Box<dyn std::error::Error>>(
@@ -259,6 +263,11 @@ impl<A: ToServerAddrs> Cluster<A> {
                 }
                 .instrument(span),
             );
+        }
+
+        if join_set.is_empty() {
+            info!("no services defined. idling forever");
+            std::future::pending::<()>().await;
         }
 
         while let Some(res) = join_set.join_next().await {

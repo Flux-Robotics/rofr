@@ -111,3 +111,18 @@ async fn test_service_echo() {
 
     assert_eq!(response.output, sample_input);
 }
+
+#[tokio::test]
+async fn test_cluster_no_services() {
+    let server = nats_server::run_server("tests/nats/default.conf");
+
+    let mut cluster = Cluster::new(server.client_url()).unwrap();
+    let test_service = TestImpl::service(());
+    cluster.register(test_service);
+
+    let result = tokio::time::timeout(Duration::from_millis(50), cluster.run()).await;
+    assert!(
+        result.is_err(),
+        "cluster without services exited immediately"
+    );
+}

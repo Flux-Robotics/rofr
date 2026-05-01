@@ -2,6 +2,9 @@
 
 ## [unreleased]
 
+- Added idling indefinitely when a cluster is run without any services
+  registered.
+
 ## v0.1.1
 
 - Remove the need for `serde_json` as a dependency in implementations.
