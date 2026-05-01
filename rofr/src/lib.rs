@@ -409,6 +409,11 @@ async fn run_service<Context: ServiceContext>(
         );
     }
 
+    if join_set.is_empty() {
+        info!("no tasks. idling forever");
+        std::future::pending::<()>().await;
+    }
+
     while let Some(res) = join_set.join_next().await {
         res.map_err(|e| format!("service task stopped: {e}"))??;
     }
