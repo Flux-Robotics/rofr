@@ -1,3 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["rofr", "rofr-macros"]
+members = [
+    "rofr",
+    "rofr-macros",
+    "examples/weather-station"
+]
