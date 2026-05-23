@@ -18,6 +18,7 @@ pub use endpoint::EndpointHandler;
 pub use endpoint::Request;
 pub use endpoint::RequestContext;
 pub use endpoint::Response;
+pub use futures;
 pub use stream::StreamContext;
 pub use stream::StreamHandler;
 

@@ -340,10 +340,24 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
 
         stream_registrations.push(quote! {
             streams.push(::rofr::Stream {
-                subject_prefix: format!("{}.{}", #service_name, #subject_prefix_expr),
+                subject_prefix: {
+                    let __prefix = #subject_prefix_expr;
+                    if __prefix.is_empty() {
+                        #service_name.to_string()
+                    } else {
+                        format!("{}.{}", #service_name, __prefix)
+                    }
+                },
                 config: ::async_nats::jetstream::stream::Config {
                     name: format!("{}_{}", #service_name.to_string().to_uppercase(), #stream_name.to_string()),
-                    subjects: vec![format!("{}.{}.{}", #service_name, #subject_prefix_expr, #stream_subject)],
+                    subjects: vec![{
+                        let __prefix = #subject_prefix_expr;
+                        if __prefix.is_empty() {
+                            format!("{}.{}", #service_name, #stream_subject)
+                        } else {
+                            format!("{}.{}.{}", #service_name, __prefix, #stream_subject)
+                        }
+                    }],
                     storage: #storage_expr,
                     ..Default::default()
                 },
@@ -427,6 +441,55 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
         })
         .collect();
 
+    let stream_client_methods: Vec<proc_macro2::TokenStream> = stream_methods
+        .iter()
+        .map(
+            |(method_name, stream_name, _stream_subject, _storage_type, message_type)| {
+                // compute the NATS stream name to match what the server registers
+                let nats_stream_name = format!("{}_{}", service_name.to_uppercase(), stream_name);
+                let msg_type: proc_macro2::TokenStream = message_type
+                    .as_ref()
+                    .map(|t| quote! { #t })
+                    .unwrap_or_else(|| quote! { ::rofr::Bytes });
+                quote! {
+                    pub async fn #method_name(
+                        &self,
+                    ) -> Result<
+                        impl ::rofr::futures::Stream<Item = Result<#msg_type, ::rofr::ClientError>>,
+                        ::rofr::ClientError,
+                    > {
+                        use ::rofr::futures::StreamExt;
+                        let jetstream = ::async_nats::jetstream::new(self.nats.clone());
+                        let nats_stream = jetstream
+                            .get_stream(#nats_stream_name)
+                            .await
+                            .map_err(|e| ::rofr::ClientError::Request(Box::new(e)))?;
+                        let consumer = nats_stream
+                            .create_consumer(
+                                ::async_nats::jetstream::consumer::push::OrderedConfig {
+                                    deliver_subject: self.nats.new_inbox(),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .map_err(|e| ::rofr::ClientError::Request(Box::new(e)))?;
+                        let messages = consumer
+                            .messages()
+                            .await
+                            .map_err(|e| ::rofr::ClientError::Request(Box::new(e)))?;
+                        Ok(messages.map(|msg| {
+                                    let msg =
+                                        msg.map_err(|e| ::rofr::ClientError::Request(Box::new(e)))?;
+                                    ::rofr::Response::<#msg_type>::from_bytes(&msg.payload)
+                                        .map_err(::rofr::ClientError::Deserialize)
+                                        .map(|r| r.0)
+                                }))
+                    }
+                }
+            },
+        )
+        .collect();
+
     let expanded = quote! {
         #trait_item
 
@@ -498,6 +561,8 @@ pub fn service(args: TokenStream, input: TokenStream) -> TokenStream {
             }
 
             #(#client_methods)*
+
+            #(#stream_client_methods)*
         }
     };
 

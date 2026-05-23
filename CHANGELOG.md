@@ -6,6 +6,7 @@
   registered.
 - Added idling indefinitely when a service doesn't contain any endpoints or
   streams.
+- Implement client generation for stream endpoints.
 
 ## v0.1.1
 
