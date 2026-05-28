@@ -232,6 +232,52 @@ async fn test_stream_context_methods() {
     let msg = stream.next().await.unwrap().unwrap();
     assert_eq!(msg, "test");
 }
+
+#[service(name = "test_memory_storage_service", version = "0.1.0")]
+trait TestMemoryStorageService {
+    type Context;
+
+    #[stream(
+        name = "MEMORY_STREAM",
+        subject = "memory_stream_subject",
+        storage = async_nats::jetstream::stream::StorageType::Memory,
+        message = u32,
+    )]
+    async fn memory_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error>;
+}
+
+#[derive(Debug)]
+struct TestMemoryStorageServiceImpl;
+
+impl TestMemoryStorageService for TestMemoryStorageServiceImpl {
+    type Context = ();
+
+    async fn memory_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
+        ctx.send("memory_stream_subject", &42u32).await?.await?;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn test_stream_memory_storage() {
+    let server = nats_server::run_server("tests/nats/default.conf");
+
+    let mut cluster = Cluster::new(server.client_url()).unwrap();
+    cluster.register(TestMemoryStorageServiceImpl::service(()));
+    tokio::spawn(async move {
+        cluster.run().await.unwrap();
+    });
+
+    sleep(Duration::from_millis(50)).await;
+
+    let client = TestMemoryStorageServiceClient::new(
+        async_nats::connect(server.client_url()).await.unwrap(),
+    );
+    let mut stream = client.memory_stream().await.unwrap();
+    let msg = stream.next().await.unwrap().unwrap();
+    assert_eq!(msg, 42u32);
+}
+
 #[tokio::test]
 async fn test_service_stream_struct_message() {
     let server = nats_server::run_server("tests/nats/default.conf");
