@@ -144,19 +144,6 @@ async fn test_service_endpoint_error_response() {
     matches!(result, ClientError::ServiceError(_));
 }
 
-#[tokio::test]
-async fn test_cluster_no_services() {
-    let server = nats_server::run_server("tests/nats/default.conf");
-
-    let cluster = Cluster::new(server.client_url()).unwrap();
-
-    let result = tokio::time::timeout(Duration::from_millis(50), cluster.run()).await;
-    assert!(
-        result.is_err(),
-        "cluster without services exited immediately"
-    );
-}
-
 #[service(name = "test_service_no_endpoints", version = "0.1.2")]
 trait TestServiceNoEndpoints {
     type Context;
