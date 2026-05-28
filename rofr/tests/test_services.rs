@@ -29,7 +29,7 @@ trait TestService {
 
     #[endpoint(subject = "echo")]
     async fn echo(
-        _ctx: RequestContext<Self::Context>,
+        ctx: RequestContext<Self::Context>,
         body: Request<ExampleRequest>,
     ) -> Result<Response<ExampleResponse>, Error>;
 }
