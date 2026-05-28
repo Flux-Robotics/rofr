@@ -207,7 +207,7 @@ async fn test_serivce_no_endpoints() {
     let result = tokio::time::timeout(Duration::from_millis(50), cluster.run()).await;
     assert!(
         result.is_err(),
-        "cluster without services exited immediately"
+        "service without endpoints exited immediately"
     );
 }
 
