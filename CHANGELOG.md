@@ -2,6 +2,8 @@
 
 ## [unreleased]
 
+## v0.1.2
+
 - Added idling indefinitely when a cluster is run without any services
   registered.
 - Added idling indefinitely when a service doesn't contain any endpoints or
