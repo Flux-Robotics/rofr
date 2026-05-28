@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn client_error_display_request() {
         let inner: Box<dyn std::error::Error + Send + Sync> =
-            Box::new(std::io::Error::new(std::io::ErrorKind::Other, "timeout"));
+            Box::new(std::io::Error::other("timeout"));
         let err = ClientError::Request(inner);
         assert_eq!(err.to_string(), "request error: timeout");
     }
