@@ -1,3 +1,4 @@
+use async_nats::HeaderMap;
 use async_nats::service;
 use rofr::ClientError;
 use rofr::Cluster;
@@ -165,6 +166,13 @@ trait TestServiceWithStream {
         message = u64,
     )]
     async fn test_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error>;
+
+    #[stream(
+        name = "TEST_STREAM_HEADERS",
+        subject = "test_stream_headers_subject",
+        message = u64,
+    )]
+    async fn test_stream_headers(ctx: StreamContext<Self::Context>) -> Result<(), Error>;
 }
 
 #[derive(Debug)]
@@ -175,6 +183,18 @@ impl TestServiceWithStream for TestServiceWithStreamImpl {
 
     async fn test_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
         ctx.send("test_stream_subject", &25)
+            .await? // publish to NATS
+            .await?; // wait for ack from NATS
+
+        // deliberately only publish one message
+        Ok(())
+    }
+
+    async fn test_stream_headers(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
+        let mut headers = HeaderMap::new();
+        headers.append("Test-Header", "example");
+
+        ctx.send_with_headers("test_stream_headers_subject", headers, &25)
             .await? // publish to NATS
             .await?; // wait for ack from NATS
 
@@ -231,6 +251,18 @@ impl TestServiceWithStream for TestServiceWithStreamMultipleImpl {
     async fn test_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
         for value in [10u64, 20, 30] {
             ctx.send("test_stream_subject", &value).await?.await?;
+        }
+        Ok(())
+    }
+
+    async fn test_stream_headers(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
+        let mut headers = HeaderMap::new();
+        headers.append("Test-Header", "example");
+
+        for value in [10u64, 20, 30] {
+            ctx.send_with_headers("test_stream_header_subject", headers.clone(), &value)
+                .await?
+                .await?;
         }
         Ok(())
     }
