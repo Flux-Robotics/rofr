@@ -1,4 +1,5 @@
 use async_nats::service;
+use rofr::ClientError;
 use rofr::Cluster;
 use rofr::Error;
 use rofr::Request;
@@ -32,6 +33,9 @@ trait TestService {
         ctx: RequestContext<Self::Context>,
         body: Request<ExampleRequest>,
     ) -> Result<Response<ExampleResponse>, Error>;
+
+    #[endpoint(subject = "return_error")]
+    async fn return_error(ctx: RequestContext<Self::Context>) -> Result<Response<()>, Error>;
 }
 
 #[derive(Debug)]
@@ -51,6 +55,10 @@ impl TestService for TestImpl {
         Ok(Response(ExampleResponse {
             output: body.input.to_owned(),
         }))
+    }
+
+    async fn return_error(_ctx: RequestContext<Self::Context>) -> Result<Response<()>, Error> {
+        Err(Error::new("example error message"))
     }
 }
 
@@ -80,7 +88,7 @@ async fn test_service_info() {
 
     assert_eq!(info.version, "0.1.2");
     assert_eq!(info.name, "test_service");
-    assert_eq!(info.endpoints.len(), 2);
+    assert_eq!(info.endpoints.len(), 3);
 }
 
 /// End-to-end test with a simple echo endpoint.
@@ -110,6 +118,30 @@ async fn test_service_echo() {
         .unwrap();
 
     assert_eq!(response.output, sample_input);
+}
+
+#[tokio::test]
+async fn test_service_endpoint_error_response() {
+    let server = nats_server::run_server("tests/nats/default.conf");
+    let client = async_nats::connect(server.client_url()).await.unwrap();
+    let client = TestServiceClient::new(client);
+
+    let mut cluster = Cluster::new(server.client_url()).unwrap();
+    let test_service = TestImpl::service(());
+    cluster.register(test_service);
+
+    tokio::spawn(async move {
+        cluster.run().await.unwrap();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    let result = client
+        .return_error()
+        .await
+        .expect_err("expected error response");
+
+    matches!(result, ClientError::ServiceError(_));
 }
 
 #[tokio::test]
