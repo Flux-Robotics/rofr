@@ -2,6 +2,9 @@
 
 # RoFr
 
+[![CI](https://github.com/Flux-Robotics/rofr/actions/workflows/ci.yml/badge.svg)](https://github.com/Flux-Robotics/rofr/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Flux-Robotics/rofr/graph/badge.svg?token=OFJE1IPE8N)](https://codecov.io/gh/Flux-Robotics/rofr)
+
 RoFr is a general-purpose framework for creating RPC-like APIs in Rust using
 NATS messaging. It also happens to be good for building robot software.
 
