@@ -889,4 +889,85 @@ mod tests {
 
         assert_eq!(result.to_string(), expected.to_string());
     }
+
+    // build_subject_prefix_expr tests
+    #[test]
+    fn test_build_subject_prefix_expr_no_params() {
+        let result = build_subject_prefix_expr(&[]);
+        // The macro expands #(#param_idents),* to nothing but keeps the trailing comma
+        let expected = quote! { format!("",) };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_build_subject_prefix_expr_single_param() {
+        let result = build_subject_prefix_expr(&["id".to_string()]);
+        let expected = quote! { format!("{}", id) };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_build_subject_prefix_expr_multiple_params() {
+        let result = build_subject_prefix_expr(&["region".to_string(), "id".to_string()]);
+        let expected = quote! { format!("{}.{}", region, id) };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    // build_client_subject_expr tests
+    #[test]
+    fn test_build_client_subject_expr_no_params() {
+        let result = build_client_subject_expr("robot", "status", &[]);
+        let expected = quote! { "robot.status".to_string() };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_build_client_subject_expr_single_param() {
+        let result = build_client_subject_expr("robot", "status", &["id".to_string()]);
+        let expected = quote! { format!("robot.{}.status", & self . id) };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn test_build_client_subject_expr_multiple_params() {
+        let result = build_client_subject_expr(
+            "weather",
+            "wind_speed",
+            &["region".to_string(), "id".to_string()],
+        );
+        let expected = quote! { format!("weather.{}.{}.wind_speed", & self . region, & self . id) };
+        assert_eq!(result.to_string(), expected.to_string());
+    }
+
+    // extract_response_type tests
+    #[test]
+    fn test_extract_response_type_valid() {
+        let ty: syn::Type = syn::parse_str("Result<Response<String>, Error>").unwrap();
+        let result = extract_response_type(&ty);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_extract_response_type_not_path_type() {
+        // Tuple type — not a Type::Path, returns None
+        let ty: syn::Type = syn::parse_str("(String, u32)").unwrap();
+        let result = extract_response_type(&ty);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_response_type_not_result() {
+        // A path, but not Result — returns None
+        let ty: syn::Type = syn::parse_str("Option<String>").unwrap();
+        let result = extract_response_type(&ty);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_response_type_non_response_inner() {
+        // Result<T, E> where T is not Response<_> — returns None
+        let ty: syn::Type = syn::parse_str("Result<String, Error>").unwrap();
+        let result = extract_response_type(&ty);
+        assert!(result.is_none());
+    }
 }
