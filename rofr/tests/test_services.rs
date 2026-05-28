@@ -210,3 +210,42 @@ async fn test_serivce_no_endpoints() {
         "cluster without services exited immediately"
     );
 }
+
+#[service(name = "robot.{id}", version = "0.1.0")]
+trait RobotService {
+    type Context;
+
+    #[endpoint(subject = "ping")]
+    async fn ping(ctx: RequestContext<Self::Context>) -> Result<Response<String>, Error>;
+}
+
+#[derive(Debug)]
+struct RobotServiceImpl;
+
+impl RobotService for RobotServiceImpl {
+    type Context = ();
+
+    async fn ping(_ctx: RequestContext<Self::Context>) -> Result<Response<String>, Error> {
+        Ok(Response("pong".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn test_template_service_endpoint() {
+    let server = nats_server::run_server("tests/nats/default.conf");
+    let client = async_nats::connect(server.client_url()).await.unwrap();
+
+    let robot_id = "robot-42";
+    let client = RobotServiceClient::new(client, (robot_id,));
+
+    let mut cluster = Cluster::new(server.client_url()).unwrap();
+    cluster.register(RobotServiceImpl::service((), (robot_id,)));
+    tokio::spawn(async move {
+        cluster.run().await.unwrap();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    let result = client.ping().await.unwrap();
+    assert_eq!(result, "pong");
+}
