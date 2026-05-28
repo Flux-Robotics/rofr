@@ -144,6 +144,46 @@ async fn test_service_endpoint_error_response() {
     matches!(result, ClientError::ServiceError(_));
 }
 
+#[service(name = "test_context_service", version = "0.1.0")]
+trait TestContextService {
+    type Context;
+
+    #[endpoint(subject = "read_context")]
+    async fn read_context(ctx: RequestContext<Self::Context>) -> Result<Response<String>, Error>;
+}
+
+#[derive(Debug)]
+struct TestContextServiceImpl;
+
+impl TestContextService for TestContextServiceImpl {
+    type Context = String;
+
+    async fn read_context(ctx: RequestContext<Self::Context>) -> Result<Response<String>, Error> {
+        let value = ctx.context().clone();
+        let _ = ctx.nats();
+        Ok(Response(value))
+    }
+}
+
+#[tokio::test]
+async fn test_request_context_methods() {
+    let server = nats_server::run_server("tests/nats/default.conf");
+    let client = async_nats::connect(server.client_url()).await.unwrap();
+    let rpc_client = TestContextServiceClient::new(client);
+
+    let context_value = "hello-from-context".to_string();
+    let mut cluster = Cluster::new(server.client_url()).unwrap();
+    cluster.register(TestContextServiceImpl::service(context_value.clone()));
+    tokio::spawn(async move {
+        cluster.run().await.unwrap();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    let result = rpc_client.read_context().await.unwrap();
+    assert_eq!(result, context_value);
+}
+
 #[service(name = "test_service_no_endpoints", version = "0.1.2")]
 trait TestServiceNoEndpoints {
     type Context;

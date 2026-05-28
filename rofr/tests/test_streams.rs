@@ -182,6 +182,56 @@ impl TestMeasurementStreamService for TestMeasurementStreamImpl {
     }
 }
 
+#[service(name = "test_stream_context_service", version = "0.1.0")]
+trait TestStreamContextService {
+    type Context;
+
+    #[stream(
+        name = "CONTEXT_STREAM",
+        subject = "context_stream_subject",
+        message = String,
+    )]
+    async fn context_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error>;
+}
+
+#[derive(Debug)]
+struct TestStreamContextServiceImpl;
+
+impl TestStreamContextService for TestStreamContextServiceImpl {
+    type Context = String;
+
+    async fn context_stream(ctx: StreamContext<Self::Context>) -> Result<(), Error> {
+        let _ctx_val = ctx.context().clone();
+        let _nats = ctx.nats();
+        let _js = ctx.jetstream();
+
+        ctx.send("context_stream_subject", &"test".to_string())
+            .await?
+            .await?;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn test_stream_context_methods() {
+    let server = nats_server::run_server("tests/nats/default.conf");
+
+    let context_value = "stream-context".to_string();
+    let mut cluster = Cluster::new(server.client_url()).unwrap();
+    cluster.register(TestStreamContextServiceImpl::service(context_value));
+    tokio::spawn(async move {
+        cluster.run().await.unwrap();
+    });
+
+    sleep(Duration::from_millis(50)).await;
+
+    let client = TestStreamContextServiceClient::new(
+        async_nats::connect(server.client_url()).await.unwrap(),
+    );
+    let mut stream = client.context_stream().await.unwrap();
+    let msg = stream.next().await.unwrap().unwrap();
+    assert_eq!(msg, "test");
+}
 #[tokio::test]
 async fn test_service_stream_struct_message() {
     let server = nats_server::run_server("tests/nats/default.conf");
