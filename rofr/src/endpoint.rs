@@ -32,12 +32,6 @@ impl<T: serde::de::DeserializeOwned + Serialize> Request<T> {
     }
 }
 
-impl<T> Request<T> {
-    pub fn into_inner(self) -> T {
-        self.inner
-    }
-}
-
 impl<T> std::ops::Deref for Request<T> {
     type Target = T;
 
