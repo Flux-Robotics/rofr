@@ -18,7 +18,7 @@ pub struct SetInterval {
 }
 
 /// Temperature reading.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Temperature {
     degrees_celsius: f64,
 }
